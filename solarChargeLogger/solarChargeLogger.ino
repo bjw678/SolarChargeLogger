@@ -5,9 +5,12 @@
 #include <avr/power.h>
 #include <avr/wdt.h>
 
+#define BENCHMARK true  // calculate how long each log takes
+#define BENCHMARK_FUNCTIONS false  // calculate data for how long individual functions take, may increase loop time
+
 #define SD_CS_PIN 10           // Chip select pin for the SD card module
 #define LOG_INTERVAL_MS 1000  // Logging interval in milliseconds (15 seconds in this example)
-#define ADC_READS 34           // Number of ADC reads to average
+#define ADC_READS 34          // Number of ADC reads to average
 #define WRITE_LOG_TO_SERIAL true  // write the logged data to the serial port 
 #define USE_SD_CARD true        // log the data to the sd card
 
@@ -16,7 +19,7 @@
 #define VOLTAGE_DIVIDER_R1_OHMS 15000
 #define VOLTAGE_DIVIDER_R2_OHMS 1000
 
-#define COMPENSATE_CURRENT_SHUNT_VOLTAGE true  // compensate for the fact the current shunt voltage pushes the ground for the battery voltage measurement down below battery ground.
+#define COMPENSATE_CURRENT_SHUNT_VOLTAGE false  // compensate for the fact the current shunt voltage pushes the ground for the battery voltage measurement down below battery ground.
 
 // Variables for battery measurement
 const int batteryPin = A0;
@@ -59,6 +62,7 @@ void loop() {
   {
     // Update the previousMillis variable
     previousMillis = millis();
+  
     // Calculate the battery voltage
     for(int n=0;n<ADC_READS;n++){ 
       currentRaw[n] = analogRead(currentPin);
@@ -73,6 +77,10 @@ void loop() {
     // Log the data to the SD card
     logData(previousMillis, rawToBatteryVoltagemv(calculateAverage(batteryRaw, ADC_READS)), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
     }
+    
+    if(BENCHMARK){
+      Serial.println("looptime(ms): " + String( millis() - previousMillis));
+    }
   }
 
 }
@@ -80,10 +88,15 @@ void loop() {
 uint16_t calculateAverage(uint16_t data[], int count){
   int highestValueIndex = 0, lowestValueIndex = 0, n;
   uint32_t total = 0;
-  if(n<=0)
+  unsigned long startMillis;
+  if(BENCHMARK_FUNCTIONS){
+    startMillis = millis();
+  }
+
+  if(count<=0)
     return 0; // invalid input data
 
-  if(n<4) {
+  if(count<4) {
     // if not enough values to remove highest and lowest and average
     for(n=0;n<count;n++)
       total = total + data[n];
@@ -103,6 +116,11 @@ uint16_t calculateAverage(uint16_t data[], int count){
       countedValues++;  // Use this for case of highest and lowest being both the same to avoid bug from count-2
     }
   }
+  if(BENCHMARK_FUNCTIONS){
+    Serial.println("calcAvgtime(ms): " + String( millis() - startMillis));
+
+  }
+
   return (uint16_t)(total/countedValues);
 
 }
@@ -139,12 +157,22 @@ String millisToHMS(unsigned long millis){
 }
 
 void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current) {
+  unsigned long startMillis;
+  if(BENCHMARK_FUNCTIONS){
+    startMillis = millis();
+  }
+
   String timestampString = millisToHMS(timestamp);
   String logLine = String(timestampString + "," + String(batteryVoltage) + "," + String(current) + "\n");
 
   if(WRITE_LOG_TO_SERIAL)
     Serial.print(logLine);
-  
+
+  if(BENCHMARK_FUNCTIONS){
+      Serial.println("logstringtime(ms): " + String( millis() - startMillis));
+      startMillis = millis();
+  }
+
   if(USE_SD_CARD){ 
     File dataFile = SD.open(logFileName, FILE_WRITE | O_CREAT | O_APPEND);
     if (dataFile) {
@@ -153,6 +181,10 @@ void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current)
       dataFile.close();
     } else {
       Serial.println("Error opening log file!");
+    }
+    
+    if(BENCHMARK_FUNCTIONS){
+      Serial.println("logSDtime(ms): " + String( millis() - startMillis));
     }
   }
 }
