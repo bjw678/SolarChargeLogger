@@ -16,6 +16,8 @@
 #define VOLTAGE_DIVIDER_R1_OHMS 15000
 #define VOLTAGE_DIVIDER_R2_OHMS 1000
 
+#define COMPENSATE_CURRENT_SHUNT_VOLTAGE true  // compensate for the fact the current shunt voltage pushes the ground for the battery voltage measurement down below battery ground.
+
 // Variables for battery measurement
 const int batteryPin = A0;
 const int currentPin = A1;
@@ -27,7 +29,6 @@ unsigned long previousMillis = 0;
 
 // Variables to store measurements to average
 uint16_t batteryRaw[ADC_READS], currentRaw[ADC_READS];
-
 
 void setup() {
   Serial.begin(9600);
@@ -63,9 +64,15 @@ void loop() {
       currentRaw[n] = analogRead(currentPin);
       batteryRaw[n] = analogRead(batteryPin);  
     }
-
+    if(COMPENSATE_CURRENT_SHUNT_VOLTAGE){
+      for(int n=0;n<ADC_READS;n++){
+        batteryRaw[n] = rawToBatteryVoltagemv(batteryRaw[n]) - rawToCurrentmv(currentRaw[n]);
+      }
+      logData(previousMillis, calculateAverage(batteryRaw, ADC_READS), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
+    }else{
     // Log the data to the SD card
-    logData(previousMillis, calculateAverage(batteryRaw, ADC_READS), calculateAverage(currentRaw, ADC_READS) );
+    logData(previousMillis, rawToBatteryVoltagemv(calculateAverage(batteryRaw, ADC_READS)), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
+    }
   }
 
 }
@@ -113,6 +120,13 @@ uint16_t rawToCurrentMa(uint16_t raw){
   return result;
 }
 
+uint16_t rawToCurrentmv(uint16_t raw){
+  uint16_t result;
+  result = (uint16_t)((float)raw *(1100.0 / 1023.0));
+  return result;
+}
+
+
 String millisToHMS(unsigned long millis){
   unsigned long seconds = millis / 1000;
   unsigned long minutes = seconds / 60;
@@ -124,9 +138,9 @@ String millisToHMS(unsigned long millis){
   return String( String(hours) + ":" + String(minutes) + ":" + String(seconds) );
 }
 
-void logData(unsigned long timestamp, uint16_t rawvoltage, uint16_t rawcurrent) {
+void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current) {
   String timestampString = millisToHMS(timestamp);
-  String logLine = String(timestampString + "," + String(rawToBatteryVoltagemv(rawvoltage)) + "," + String(rawToCurrentMa(rawcurrent)) + "\n");
+  String logLine = String(timestampString + "," + String(batteryVoltage) + "," + String(current) + "\n");
 
   if(WRITE_LOG_TO_SERIAL)
     Serial.print(logLine);
