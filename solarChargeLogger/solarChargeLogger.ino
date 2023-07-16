@@ -4,12 +4,15 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
 #include <avr/wdt.h>
+#include <math.h> //for calculating standard deviation
 
-#define BENCHMARK true  // calculate how long each log takes
+
+#define BENCHMARK false  // calculate how long each log takes
 #define BENCHMARK_FUNCTIONS false  // calculate data for how long individual functions take, may increase loop time
+#define PRINT_VARIATIONS false     // print out the average and high low value for each average calculation + Standard Deviation
 
 #define SD_CS_PIN 10           // Chip select pin for the SD card module
-#define LOG_INTERVAL_MS 1000  // Logging interval in milliseconds (15 seconds in this example)
+#define LOG_INTERVAL_MS 5000    // Logging interval in milliseconds (15 seconds in this example)
 #define ADC_READS 34          // Number of ADC reads to average
 #define WRITE_LOG_TO_SERIAL true  // write the logged data to the serial port 
 #define USE_SD_CARD true        // log the data to the sd card
@@ -116,6 +119,10 @@ uint16_t calculateAverage(uint16_t data[], int count){
       countedValues++;  // Use this for case of highest and lowest being both the same to avoid bug from count-2
     }
   }
+  if(PRINT_VARIATIONS){
+    float sd = calculateStandardDeviation(data,count);
+    Serial.println("Calculated: avg: " + String(total/countedValues) + "\tmin: " + data[lowestValueIndex] + "\tmax: " + data[highestValueIndex] + "\tsd: " + String(sd));
+  }
   if(BENCHMARK_FUNCTIONS){
     Serial.println("calcAvgtime(ms): " + String( millis() - startMillis));
 
@@ -153,7 +160,14 @@ String millisToHMS(unsigned long millis){
   seconds %= 60;
   minutes %= 60;
  
-  return String( String(hours) + ":" + String(minutes) + ":" + String(seconds) );
+  if(LOG_INTERVAL_MS%1000 == 0){
+    return String( String(hours) + ":" + String(minutes) + ":" + String(seconds) );
+  }else{
+    String str = String(millis%1000);
+    while(str.length() < 3)
+      str = "0" + str;
+    return String( String(hours) + ":" + String(minutes) + ":" + String(seconds) + "." + str );
+  }
 }
 
 void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current) {
@@ -206,4 +220,38 @@ String getLogFileName() {
   }
 
   return fileName;
+}
+
+
+
+float calculateStandardDeviation(const uint16_t* array, int length) {
+  float sum = 0.0;
+  float mean = 0.0;
+  float standardDeviation = 0.0;
+  unsigned long startMillis;
+  if(BENCHMARK_FUNCTIONS){
+    startMillis = millis();
+  }
+
+  // Calculate the sum of all elements
+  for (int i = 0; i < length; i++) {
+    sum += array[i];
+  }
+
+  // Calculate the mean
+  mean = sum / length;
+
+  // Calculate the sum of squared differences from the mean
+  for (int i = 0; i < length; i++) {
+    standardDeviation += pow(array[i] - mean, 2);
+  }
+
+  // Divide by (n-1) and take the square root to get the standard deviation
+  standardDeviation = sqrt(standardDeviation / (length - 1));
+
+  if(BENCHMARK_FUNCTIONS){
+    Serial.println("calcSDtime(ms): " + String( millis() - startMillis));
+  }
+
+  return standardDeviation;
 }
