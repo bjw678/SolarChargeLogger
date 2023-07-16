@@ -12,7 +12,7 @@
 #define PRINT_VARIATIONS false     // print out the average and high low value for each average calculation + Standard Deviation
 
 #define SD_CS_PIN 10           // Chip select pin for the SD card module
-#define LOG_INTERVAL_MS 50    // Logging interval in milliseconds (15 seconds in this example)
+#define LOG_INTERVAL_MS 40    // Logging interval in milliseconds (15 seconds in this example)
 #define ADC_READS 34          // Number of ADC reads to average
 #define WRITE_LOG_TO_SERIAL true  // write the logged data to the serial port 
 #define USE_SD_CARD true        // log the data to the sd card
@@ -69,14 +69,21 @@ void setup() {
   if(SHOW_CUMULATIVE_AH){
     ahPreviousTimestamp = millis();
   }
+
+  // set time to be on an even multiple of sample time
+  previousMillis = millis();
+  previousMillis = previousMillis - previousMillis%LOG_INTERVAL_MS;
 }
 
 void loop() {
- 
-  if(millis() - previousMillis > LOG_INTERVAL_MS) // if time elapsed
+  unsigned long currentMillis;
+  
+  currentMillis = millis();
+  
+  if(currentMillis - previousMillis >= LOG_INTERVAL_MS) // if time elapsed
   {
     // Update the previousMillis variable
-    previousMillis = millis();
+    previousMillis += LOG_INTERVAL_MS;
   
     // Calculate the battery voltage
     for(int n=0;n<ADC_READS;n++){ 
@@ -87,10 +94,10 @@ void loop() {
       for(int n=0;n<ADC_READS;n++){
         batteryRaw[n] = rawToBatteryVoltagemv(batteryRaw[n]) - rawToCurrentmv(currentRaw[n]);
       }
-      logData(previousMillis, calculateAverage(batteryRaw, ADC_READS), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
+      logData(currentMillis, calculateAverage(batteryRaw, ADC_READS), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
     }else{
     // Log the data to the SD card
-    logData(previousMillis, rawToBatteryVoltagemv(calculateAverage(batteryRaw, ADC_READS)), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
+    logData(currentMillis, rawToBatteryVoltagemv(calculateAverage(batteryRaw, ADC_READS)), rawToCurrentMa(calculateAverage(currentRaw, ADC_READS)) );
     }
     
     if(BENCHMARK){
@@ -198,7 +205,7 @@ void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current)
     logLine = logLine + "," + String(AH + overflowAH,6); 
     ahPreviousTimestamp = timestamp;
 
-    if(milliampMillisecondsTotal > 0.95 * 18,446,744,073,709,551,615){ // if approaching uint64 capacity
+    if(milliampMillisecondsTotal > 0.9 * 0xFFFFFFFFFFFFFFFF){ // if approaching uint64 capacity 18,446,744,073,709,551,615
       milliampMillisecondsTotal = 0;
       overflowAH += AH;
     }
@@ -217,7 +224,7 @@ void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current)
     File dataFile = SD.open(logFileName, FILE_WRITE | O_CREAT | O_APPEND);
     if (dataFile) {
       dataFile.print(logLine);
-      Serial.println("Data logged.");
+      //Serial.println("Data logged.");
       dataFile.close();
     } else {
       Serial.println("Error opening log file!");
