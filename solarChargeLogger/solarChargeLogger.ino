@@ -12,10 +12,11 @@
 #define PRINT_VARIATIONS false     // print out the average and high low value for each average calculation + Standard Deviation
 
 #define SD_CS_PIN 10           // Chip select pin for the SD card module
-#define LOG_INTERVAL_MS 5000    // Logging interval in milliseconds (15 seconds in this example)
+#define LOG_INTERVAL_MS 50    // Logging interval in milliseconds (15 seconds in this example)
 #define ADC_READS 34          // Number of ADC reads to average
 #define WRITE_LOG_TO_SERIAL true  // write the logged data to the serial port 
 #define USE_SD_CARD true        // log the data to the sd card
+#define SHOW_CUMULATIVE_AH true // keep and log a cumulative AmpHour total
 
 // measurement Resistore
 #define CURRENT_SHUNT_OHMS  5.0  // value of resistor being used to sense current
@@ -36,6 +37,10 @@ unsigned long previousMillis = 0;
 // Variables to store measurements to average
 uint16_t batteryRaw[ADC_READS], currentRaw[ADC_READS];
 
+uint64_t milliampMillisecondsTotal = 0;   // used for AmpHours but no floating point required so no rounding errors
+float overflowAH = 0.0;                   // used to hold overflow if milliampMillisecondsTotal gets over half full
+unsigned long ahPreviousTimestamp;        // used to track delta time for AH calculation
+
 void setup() {
   Serial.begin(9600);
   analogReference(INTERNAL);  // set 1.1V internal reference
@@ -44,18 +49,25 @@ void setup() {
     // Initialize SD card
    if (!SD.begin(SD_CS_PIN)) {
      Serial.println("SD card initialization failed!");
-     return;
-   }
+   }else{ 
     // Create a new file for logging
     logFileName = getLogFileName();
 
     File dataFile = SD.open(logFileName, FILE_WRITE);
     if (dataFile) {
-      dataFile.println("Time,Voltage(mV),current(mA)");
+      if(SHOW_CUMULATIVE_AH){
+        dataFile.println("Time,Voltage(mV),current(mA),CumulativeAH");
+      }else{ 
+        dataFile.println("Time,Voltage(mV),current(mA)");
+      }
       dataFile.close();
     } else {
       Serial.println("Error creating log file!");
     }
+   }
+  }
+  if(SHOW_CUMULATIVE_AH){
+    ahPreviousTimestamp = millis();
   }
 }
 
@@ -172,12 +184,26 @@ String millisToHMS(unsigned long millis){
 
 void logData(unsigned long timestamp, uint16_t batteryVoltage, uint16_t current) {
   unsigned long startMillis;
+
   if(BENCHMARK_FUNCTIONS){
     startMillis = millis();
   }
 
   String timestampString = millisToHMS(timestamp);
-  String logLine = String(timestampString + "," + String(batteryVoltage) + "," + String(current) + "\n");
+  String logLine = String(timestampString + "," + String(batteryVoltage) + "," + String(current));
+
+  if(SHOW_CUMULATIVE_AH){
+    milliampMillisecondsTotal += current * (timestamp - ahPreviousTimestamp);
+    float AH = (float)milliampMillisecondsTotal / (1000.0 * 1000.0 * 60.0 * 60.0);//millamps to amps, millisecs to secs, to minutes, to hours
+    logLine = logLine + "," + String(AH + overflowAH,6); 
+    ahPreviousTimestamp = timestamp;
+
+    if(milliampMillisecondsTotal > 0.95 * 18,446,744,073,709,551,615){ // if approaching uint64 capacity
+      milliampMillisecondsTotal = 0;
+      overflowAH += AH;
+    }
+  }
+  logLine = logLine + "\n"; 
 
   if(WRITE_LOG_TO_SERIAL)
     Serial.print(logLine);
